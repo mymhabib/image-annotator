@@ -13,7 +13,7 @@
 
   // ---------- UI ----------
   // per-shape colors, picked from a small popover opened by the ▾ next to each tool
-  const colors = { arrow: '#ef4444', rect: '#ef4444', num: '#ef4444' };
+  const colors = { arrow: '#ef4444', line: '#ef4444', rect: '#ef4444', num: '#ef4444' };
   const pop = document.createElement('div'); pop.id = 'pop'; document.body.appendChild(pop);
   let popShape = null, popSnapped = false;
   const paintDots = () => document.querySelectorAll('.cbtn').forEach(b => { b.querySelector('i').style.background = colors[b.dataset.color]; });
@@ -45,7 +45,7 @@
   const thick = $('#thick'), head = $('#head'), numsz = $('#numsz');
   const ub = () => Math.max(1, W / 1000), NUM0 = () => 13 * ub();
   const R = { thick, head, numsz }, N = { thick: $('#thickn'), head: $('#headn'), numsz: $('#numn') };
-  const lineDef = { arrow: 100, rect: 100 };   // line thickness (%) remembered separately for arrows and boxes
+  const lineDef = { arrow: 100, line: 100, rect: 100 };   // line thickness (%) remembered separately for arrows and boxes
   function syncLine() {
     const k = sel ? sel.type : tool;
     if (sel && sel.lw != null) thick.value = sel.lw / ub() / 3 * 100; else if (k in lineDef) thick.value = lineDef[k];
@@ -155,6 +155,8 @@
     g.save(); g.strokeStyle = g.fillStyle = a.color; g.lineCap = g.lineJoin = 'round';
     if (a.type === 'rect') {
       g.lineWidth = a.lw; g.strokeRect(a.x1, a.y1, a.x2 - a.x1, a.y2 - a.y1);
+    } else if (a.type === 'line') {
+      g.lineWidth = a.lw; g.beginPath(); g.moveTo(a.x1, a.y1); g.lineTo(a.x2, a.y2); g.stroke();
     } else if (a.type === 'arrow') {
       const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), head = a.hd;
       g.lineWidth = a.lw;
@@ -185,7 +187,7 @@
     g.restore();
   }
   function handlesOf(a) {
-    if (a.type === 'arrow') return [{ key: 'start', x: a.x1, y: a.y1 }, { key: 'end', x: a.x2, y: a.y2 }];
+    if (a.type === 'arrow' || a.type === 'line') return [{ key: 'start', x: a.x1, y: a.y1 }, { key: 'end', x: a.x2, y: a.y2 }];
     if (a.type === 'num') return [{ key: 'r', x: a.x1 + a.r * .7071, y: a.y1 + a.r * .7071 }];
     const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
     return [['nw', a.x1, a.y1], ['n', mx, a.y1], ['ne', a.x2, a.y1], ['e', a.x2, my], ['se', a.x2, a.y2], ['s', mx, a.y2], ['sw', a.x1, a.y2], ['w', a.x1, my]].map(([key, x, y]) => ({ key, x, y }));
@@ -219,7 +221,7 @@
       const dpr = window.devicePixelRatio || 1, acc = '#2563eb';
       g.lineWidth = 1.5 * dpr; g.strokeStyle = acc; g.setLineDash([5 * dpr, 4 * dpr]);
       if (sel.type === 'num') { g.beginPath(); g.arc(sel.x1 * scale, sel.y1 * scale, sel.r * scale + 3 * dpr, 0, 7); g.stroke(); }
-      else if (sel.type !== 'arrow') g.strokeRect(sel.x1 * scale, sel.y1 * scale, (sel.x2 - sel.x1) * scale, (sel.y2 - sel.y1) * scale);
+      else if (sel.type !== 'arrow' && sel.type !== 'line') g.strokeRect(sel.x1 * scale, sel.y1 * scale, (sel.x2 - sel.x1) * scale, (sel.y2 - sel.y1) * scale);
       g.setLineDash([]); g.fillStyle = '#fff';
       handlesOf(sel).forEach(h => { const s = 5 * dpr; g.fillRect(h.x * scale - s, h.y * scale - s, 2 * s, 2 * s); g.strokeRect(h.x * scale - s, h.y * scale - s, 2 * s, 2 * s); });
       if (sel.type === 'num') {   // size badge next to the number
@@ -243,7 +245,7 @@
   function hits(a, p, full) {
     const tol = 10 * px();
     if (a.type === 'num') return Math.hypot(p.x - a.x1, p.y - a.y1) <= a.r + tol / 2;
-    if (a.type === 'arrow') return segDist(p, a.x1, a.y1, a.x2, a.y2) <= Math.max(tol, a.lw);
+    if (a.type === 'arrow' || a.type === 'line') return segDist(p, a.x1, a.y1, a.x2, a.y2) <= Math.max(tol, a.lw);
     const x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2), y1 = Math.min(a.y1, a.y2), y2 = Math.max(a.y1, a.y2);
     const outer = p.x >= x1 - tol && p.x <= x2 + tol && p.y >= y1 - tol && p.y <= y2 + tol;
     if (isB(a) && full) return outer;
@@ -324,7 +326,7 @@
     if (mode && mode.kind.startsWith('crop')) { cropDrag(p); render(); return; }
     if (draft) {
       draft.x2 = p.x; draft.y2 = p.y;
-      if (e.shiftKey && draft.type === 'arrow') {
+      if (e.shiftKey && (draft.type === 'arrow' || draft.type === 'line')) {
         const dx = p.x - draft.x1, dy = p.y - draft.y1, len = Math.hypot(dx, dy), a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
         draft.x2 = draft.x1 + Math.cos(a) * len; draft.y2 = draft.y1 + Math.sin(a) * len;
       }
@@ -387,7 +389,7 @@
 
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
-    const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase(), T = { v: 'select', a: 'arrow', r: 'rect', b: 'blur', g: 'gblur', n: 'num', c: 'crop' };
+    const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase(), T = { v: 'select', a: 'arrow', l: 'line', r: 'rect', b: 'blur', g: 'gblur', n: 'num', c: 'crop' };
     if (key === 'enter' && crop) { e.preventDefault(); applyCrop(); }
     else if (mod && key === 'z') { e.preventDefault(); undo(); }
     else if (mod && key === 'c') { e.preventDefault(); copy(); }

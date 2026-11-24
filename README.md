@@ -32,6 +32,7 @@ Each browser tab has its own image and undo history.
 | --- | --- |
 | `V` | Select tool |
 | `A` | Arrow |
+| `L` | Line |
 | `R` | Box |
 | `B` | Pixelate |
 | `G` | Smooth blur |

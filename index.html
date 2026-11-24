@@ -19,6 +19,7 @@
   <div class="group">
     <button data-tool="select" class="ib" title="Select (V)" aria-label="Select (V)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3l11 6.5-5 1.4L8.6 16z" fill="currentColor"/></svg></button>
     <span class="split"><button data-tool="arrow" class="ib on" title="Arrow (A)" aria-label="Arrow (A)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16L15.5 4.5M8 4h8v8"/></svg></button><button class="cbtn" data-color="arrow" title="Arrow color" aria-label="Color"><i></i>▾</button></span>
+    <span class="split"><button data-tool="line" class="ib" title="Line (L)" aria-label="Line (L)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 15.5L15.5 4.5"/></svg></button><button class="cbtn" data-color="line" title="Line color" aria-label="Color"><i></i>▾</button></span>
     <span class="split"><button data-tool="rect" class="ib" title="Box (R)" aria-label="Box (R)"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="1.5"/></svg></button><button class="cbtn" data-color="rect" title="Box color" aria-label="Color"><i></i>▾</button></span>
     <button data-tool="blur" class="ib" title="Pixelate (B)" aria-label="Pixelate (B)"><svg viewBox="0 0 20 20" aria-hidden="true"><g fill="currentColor" stroke="none"><rect x="3" y="3" width="4.6" height="4.6"/><rect x="12.4" y="3" width="4.6" height="4.6"/><rect x="7.7" y="7.7" width="4.6" height="4.6"/><rect x="3" y="12.4" width="4.6" height="4.6"/><rect x="12.4" y="12.4" width="4.6" height="4.6"/></g></svg></button>
     <button data-tool="gblur" class="ib" title="Smooth blur (G)" aria-label="Smooth blur (G)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5S4.5 9 4.5 12.2a5.5 5.5 0 0011 0C15.5 9 10 2.5 10 2.5z"/><path d="M7.5 12.5a2.6 2.6 0 002.2 2.4" opacity=".6"/></svg></button>
@@ -26,7 +27,7 @@
     <button data-tool="crop" class="ib" title="Crop (C)" aria-label="Crop (C)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2v12a2 2 0 002 2h10M2 6h12a2 2 0 012 2v10"/></svg></button>
   </div>
   <div class="group" id="sizes">
-    <span class="ctl" data-for="arrow rect">Line <input type="range" id="thick" min="20" max="500" step="5" value="100"><input type="number" class="pin" id="thickn" min="20" max="500" step="5">%<button class="rst" id="thickb" title="Reset to 100%">↺</button></span>
+    <span class="ctl" data-for="arrow line rect">Thickness <input type="range" id="thick" min="20" max="500" step="5" value="100"><input type="number" class="pin" id="thickn" min="20" max="500" step="5">%<button class="rst" id="thickb" title="Reset to 100%">↺</button></span>
     <span class="ctl" data-for="arrow">Arrow head <input type="range" id="head" min="20" max="500" step="5" value="100"><input type="number" class="pin" id="headn" min="20" max="500" step="5">%<button class="rst" id="headb" title="Reset to 100%">↺</button></span>
     <span class="ctl" data-for="num">Number <input type="range" id="numsz" min="40" max="500" step="5" value="100"><input type="number" class="pin" id="numn" min="40" max="500" step="5">%<button class="rst" id="numszb" title="Reset to 100%">↺</button></span>
   </div>
