@@ -7,19 +7,18 @@
 (() => {
   const $ = s => document.querySelector(s);
   const cv = $('#c'), ctx = cv.getContext('2d');
-  const base = document.createElement('canvas');           // untouched original pixels
+  const base = document.createElement('canvas');
   let W = 0, H = 0, hasImg = false, tool = 'arrow', lastNumR = 13;
   let items = [], sel = null, draft = null, mode = null, hist = [], k = 1, crop = null;
 
-  // ---------- UI ----------
-  // per-shape colors, picked from a small popover opened by the ▾ next to each tool
-  const colors = { arrow: '#ef4444', line: '#ef4444', rect: '#ef4444', num: '#ef4444' };
+  const colors = { arrow: '#ef4444', line: '#ef4444', rect: '#ef4444', num: '#ef4444', numo: '#ffffff' };
   const pop = document.createElement('div'); pop.id = 'pop'; document.body.appendChild(pop);
   let popShape = null, popSnapped = false;
   const paintDots = () => document.querySelectorAll('.cbtn').forEach(b => { b.querySelector('i').style.background = colors[b.dataset.color]; });
   function chooseColor(c) {
     colors[popShape] = c; picker.value = c; paintDots();
-    if (sel && sel.type === popShape) { if (!popSnapped) { snap(); popSnapped = true; } sel.color = c; render(); }
+    const tgt = popShape === 'numo' ? 'num' : popShape, prop = popShape === 'numo' ? 'oc' : 'color';
+    if (sel && sel.type === tgt) { if (!popSnapped) { snap(); popSnapped = true; } sel[prop] = c; render(); }
   }
   const closePop = () => { pop.style.display = 'none'; popShape = null; };
   ['#ef4444', '#f59e0b', '#22c55e', '#2563eb', '#a855f7', '#000000', '#ffffff'].forEach(c => {
@@ -33,38 +32,40 @@
   document.querySelectorAll('.cbtn').forEach(b => b.onclick = e => {
     e.stopPropagation();
     const shape = b.dataset.color; if (popShape === shape) return closePop();
-    popShape = shape; popSnapped = false; setTool(shape); picker.value = colors[shape];
+    popShape = shape; popSnapped = false; setTool(shape === 'numo' ? 'num' : shape); picker.value = colors[shape];
     const r = b.getBoundingClientRect(); pop.style.display = 'flex'; pop.style.top = r.bottom + 6 + 'px';
     pop.style.left = Math.min(r.left, innerWidth - pop.offsetWidth - 8) + 'px';
   });
   document.addEventListener('pointerdown', e => { if (popShape && !pop.contains(e.target) && !e.target.closest('.cbtn')) closePop(); });
   paintDots();
   document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
-  // Line / arrow head / number size: slider + typed % + reset. 100% = default. Edits the selected shape live,
-  // otherwise sets the size for the next shapes.
   const thick = $('#thick'), head = $('#head'), numsz = $('#numsz');
   const ub = () => Math.max(1, W / 1000), NUM0 = () => 13 * ub();
-  const R = { thick, head, numsz }, N = { thick: $('#thickn'), head: $('#headn'), numsz: $('#numn') };
-  const lineDef = { arrow: 100, line: 100, rect: 100 };   // line thickness (%) remembered separately for arrows and boxes
+  const outl = $('#outl'), outon = $('#outon'); let outOn = false, outPct = 100;
+  const R = { thick, head, numsz, outl }, N = { thick: $('#thickn'), head: $('#headn'), numsz: $('#numn'), outl: $('#outln') };
+  const lineDef = { arrow: 100, line: 100, rect: 100 };
   function syncLine() {
     const k = sel ? sel.type : tool;
     if (sel && sel.lw != null) thick.value = sel.lw / ub() / 3 * 100; else if (k in lineDef) thick.value = lineDef[k];
+    if (sel && sel.type === 'num') { outon.checked = sel.ow > 0; outl.value = sel.ow > 0 ? sel.ow / ub() / 3 * 100 : outPct; }
+    else { outon.checked = outOn; outl.value = outPct; }
     showPct();
   }
   const showPct = () => { for (const id in R) N[id].value = Math.round(R[id].value); };
   showPct();
   const redraw = () => { if (hasImg) render(); };
-  const rel = {   // does this control affect the selected shape?
-    thick: () => sel && sel.lw != null, head: () => sel && sel.type === 'arrow', numsz: () => sel && sel.type === 'num' };
+  const rel = {
+    thick: () => sel && sel.lw != null, head: () => sel && sel.type === 'arrow', numsz: () => sel && sel.type === 'num', outl: () => sel && sel.type === 'num' && sel.ow > 0 };
   const apply = {
     thick: () => { const k = sel ? sel.type : tool; if (k in lineDef) lineDef[k] = +thick.value; if (rel.thick()) sel.lw = thick.value / 100 * 3 * ub(); },
     head: () => { if (rel.head()) sel.hd = head.value / 100 * 15 * ub(); },
-    numsz: () => { lastNumR = numsz.value / 100 * NUM0(); if (rel.numsz()) sel.r = lastNumR; } };   // next numbers match too
+    numsz: () => { lastNumR = numsz.value / 100 * NUM0(); if (rel.numsz()) sel.r = lastNumR; },
+    outl: () => { outPct = +outl.value; if (rel.outl()) sel.ow = outl.value / 100 * 3 * ub(); } };
   for (const id in R) {
     const r = R[id], n = N[id];
     r.addEventListener('pointerdown', () => { if (rel[id]()) snap(); });
     r.addEventListener('input', () => { showPct(); apply[id](); redraw(); });
-    r.addEventListener('change', () => r.blur());   // give keys back to the canvas (arrow-key nudging)
+    r.addEventListener('change', () => r.blur());
     n.addEventListener('focus', () => { n._snapped = false; });
     n.addEventListener('input', () => {
       const v = parseFloat(n.value); if (isNaN(v)) return;
@@ -74,6 +75,11 @@
     n.addEventListener('change', showPct);
     $('#' + id + 'b').addEventListener('click', () => { if (rel[id]()) snap(); r.value = 100; showPct(); apply[id](); redraw(); });
   }
+  outon.addEventListener('change', () => {
+    outOn = outon.checked;
+    if (sel && sel.type === 'num') { snap(); sel.ow = outon.checked ? outl.value / 100 * 3 * ub() : 0; if (outon.checked && !sel.oc) sel.oc = colors.numo; redraw(); }
+    outon.blur();
+  });
   $('#newtab').onclick = () => window.open(location.href, '_blank');
   function select(a) {
     sel = a;
@@ -95,8 +101,6 @@
     updateCtls(); tool = t; updateCtls(); document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); cv.style.cursor = t === 'select' ? 'default' : 'crosshair'; if (hasImg) render(); }
   function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 1600); }
 
-  // ---------- Loading images ----------
-  // edge snapping: boxes / blurs magnetise their moving edge to the matching edge of other shapes of the same type
   let snapOn = true, snapRef = null;
   try { snapOn = localStorage.getItem('ia-snap') !== '0'; } catch (err) {}
   const snapBtn = $('#snap'), paintSnap = () => snapBtn.classList.toggle('on', snapOn);
@@ -106,16 +110,14 @@
   }
   snapBtn.onclick = toggleSnap; paintSnap();
   const RL = t => t === 'rect' || t === 'blur' || t === 'gblur';
-  // mx / my = the edge being moved (x1|x2, y1|y2), or null if that axis isn't changing.
-  // The moving edge snaps to the same side (left/right/top/bottom) of the nearest-aligned shape of the same type.
   function snapDims(it, mx, my, e) {
     snapRef = null;
-    if (!snapOn || (e && (e.metaKey || e.ctrlKey))) return;   // hold Cmd/Ctrl to bypass
+    if (!snapOn || (e && (e.metaKey || e.ctrlKey))) return;
     const bb = o => ({ l: Math.min(o.x1, o.x2), r: Math.max(o.x1, o.x2), t: Math.min(o.y1, o.y2), b: Math.max(o.y1, o.y2) });
     const others = items.filter(o => o !== it && o.type === it.type).map(bb);
     if (!others.length) return;
     const tol = 8 * px(), guides = [];
-    const pick = (key, side) => {   // closest same-side edge within tolerance
+    const pick = (key, side) => {
       let best = null, bd = tol + 1;
       for (const b of others) { const v = b[side], d = Math.abs(v - it[key]); if (d < bd) { bd = d; best = { v, b }; } }
       return best;
@@ -123,11 +125,10 @@
     if (mx) { const hit = pick(mx, (mx === 'x1' ? it.x1 <= it.x2 : it.x2 < it.x1) ? 'l' : 'r'); if (hit) { it[mx] = hit.v; guides.push({ axis: 'x', pos: hit.v, b: hit.b }); } }
     if (my) { const hit = pick(my, (my === 'y1' ? it.y1 <= it.y2 : it.y2 < it.y1) ? 't' : 'b'); if (hit) { it[my] = hit.v; guides.push({ axis: 'y', pos: hit.v, b: hit.b }); } }
     if (!guides.length) return;
-    const a = bb(it);   // guide line spans both shapes
+    const a = bb(it);
     guides.forEach(g => { if (g.axis === 'x') { g.from = Math.min(a.t, g.b.t); g.to = Math.max(a.b, g.b.b); } else { g.from = Math.min(a.l, g.b.l); g.to = Math.max(a.r, g.b.r); } });
     snapRef = guides;
   }
-  // pasted images live in a registry (items only store an id, so undo snapshots stay small)
   const imgReg = new Map(); let imgSeq = 0, blurSrc = base, blurSig = '', compC = null;
   let shapeClip = null;
   const MARKER = '[shape copied in Image Annotator]';
@@ -142,8 +143,6 @@
     };
     img.src = url;
   }
-  // Paste: first image becomes the canvas. After that an image is added as a movable layer and a copied shape is pasted.
-  // Cmd/Ctrl+Shift+V replaces the whole canvas with the clipboard image instead.
   let pasteReplace = false;
   document.addEventListener('paste', e => {
     if (e.target.tagName === 'INPUT') return;
@@ -176,7 +175,7 @@
   }
   function pasteShape() {
     const it = JSON.parse(shapeClip.json), off = 16 * px() * ++shapeClip.n;
-    if (it.type === 'image' && !imgReg.has(it.id)) return;   // its image belonged to a previous canvas
+    if (it.type === 'image' && !imgReg.has(it.id)) return;
     it.x1 += off; it.y1 += off; if (it.x2 != null) { it.x2 += off; it.y2 += off; }
     snap(); items.push(it); renumber(); select(it); render();
   }
@@ -190,7 +189,6 @@
   $('#open').onclick = () => $('#file').click();
   $('#file').onchange = e => { if (e.target.files[0]) loadBlob(e.target.files[0]); e.target.value = ''; };
 
-  // ---------- HD layout: backing store = CSS size x devicePixelRatio ----------
   function layout() {
     if (!hasImg) return;
     const dpr = window.devicePixelRatio || 1;
@@ -200,15 +198,14 @@
     k = cv.width / W; render();
   }
   window.addEventListener('resize', layout);
-  if (window.ResizeObserver) new ResizeObserver(layout).observe(stage);   // toolbar height can change
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(stage);
 
-  // ---------- Drawing ----------
     function drawImg(g, a) {
     const im = imgReg.get(a.id); if (!im) return;
     g.save(); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
     g.drawImage(im, Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), Math.abs(a.x2 - a.x1), Math.abs(a.y2 - a.y1)); g.restore();
   }
-  function blurSource() {   // screenshot + pasted images, so blurs also cover pasted images
+  function blurSource() {
     const imgs = items.filter(a => a.type === 'image');
     if (!imgs.length || !items.some(a => a.type === 'blur' || a.type === 'gblur')) { blurSig = ''; return base; }
     compC = compC || document.createElement('canvas'); compC.width = W; compC.height = H;
@@ -226,7 +223,7 @@
     const off = document.createElement('canvas'); off.width = sw; off.height = sh;
     const og = off.getContext('2d'); og.imageSmoothingQuality = 'high';
     if (canFilter) { og.filter = `blur(${sigma}px)`; og.drawImage(blurSrc, sx, sy, sw, sh, 0, 0, sw, sh); }
-    else {   // Safari fallback: repeated halving then smooth upscale
+    else {   // Safari fallback
       let cur = document.createElement('canvas'); cur.width = sw; cur.height = sh; cur.getContext('2d').drawImage(blurSrc, sx, sy, sw, sh, 0, 0, sw, sh);
       const f = Math.max(2, Math.round(sigma / 1.5)); let cw = sw, ch = sh;
       while (cw > sw / f + 1 && cw > 4 && ch > 4) { const n = document.createElement('canvas'); n.width = Math.max(2, Math.ceil(cw / 2)); n.height = Math.max(2, Math.ceil(ch / 2)); const ng = n.getContext('2d'); ng.imageSmoothingQuality = 'high'; ng.drawImage(cur, 0, 0, n.width, n.height); cur = n; cw = n.width; ch = n.height; }
@@ -251,6 +248,7 @@
       g.closePath(); g.fill();
     } else if (a.type === 'num') {
       g.beginPath(); g.arc(a.x1, a.y1, a.r, 0, 7); g.fill();
+      if (a.ow > 0) { g.beginPath(); g.arc(a.x1, a.y1, a.r + a.ow / 2, 0, 7); g.lineWidth = a.ow; g.strokeStyle = a.oc || '#ffffff'; g.stroke(); }
       g.fillStyle = '#fff'; g.font = `700 ${a.r * 1.15}px -apple-system, Helvetica, Arial, sans-serif`;
       g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(a.n, a.x1, a.y1 + a.r * .06);
     } else if (a.type === 'blur') {
@@ -275,16 +273,15 @@
     const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
     return [['nw', a.x1, a.y1], ['n', mx, a.y1], ['ne', a.x2, a.y1], ['e', a.x2, my], ['se', a.x2, a.y2], ['s', mx, a.y2], ['sw', a.x1, a.y2], ['w', a.x1, my]].map(([key, x, y]) => ({ key, x, y }));
   }
-  // scale = backing px per image px; ui = draw selection handles
   function render(g = ctx, scale = k, ui = true) {
     if (ui) updateCtls();
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
     g.setTransform(scale, 0, 0, scale, 0, 0);
     g.drawImage(base, 0, 0);
-    items.filter(a => a.type === 'image').forEach(a => drawImg(g, a));   // pasted images sit on the screenshot
+    items.filter(a => a.type === 'image').forEach(a => drawImg(g, a));
     blurSrc = blurSource();
-    items.filter(isB).forEach(a => drawItem(g, a));   // blurs sit under annotations (and blur pasted images too)
+    items.filter(isB).forEach(a => drawItem(g, a));
     items.filter(a => !isB(a) && a.type !== 'image').forEach(a => drawItem(g, a));
     if (draft) drawItem(g, draft);
     if (ui && crop) {
@@ -301,7 +298,7 @@
       g.fillStyle = '#2563eb'; g.fillRect(bx, by, pw, ph);
       g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(t, bx + 6 * dpr, by + ph / 2 + dpr * .5);
     }
-    if (ui && snapRef) {   // magenta alignment guides
+    if (ui && snapRef) {
       g.setTransform(1, 0, 0, 1, 0, 0);
       const dpr = window.devicePixelRatio || 1, pad = 6 * dpr;
       g.strokeStyle = '#d946ef'; g.lineWidth = 1.5 * dpr; g.setLineDash([6 * dpr, 4 * dpr]);
@@ -317,23 +314,22 @@
       g.setTransform(1, 0, 0, 1, 0, 0);
       const dpr = window.devicePixelRatio || 1, acc = '#2563eb';
       g.lineWidth = 1.5 * dpr; g.strokeStyle = acc; g.setLineDash([5 * dpr, 4 * dpr]);
-      if (sel.type === 'num') { g.beginPath(); g.arc(sel.x1 * scale, sel.y1 * scale, sel.r * scale + 3 * dpr, 0, 7); g.stroke(); }
+      if (sel.type === 'num') { g.beginPath(); g.arc(sel.x1 * scale, sel.y1 * scale, (sel.r + (sel.ow || 0)) * scale + 3 * dpr, 0, 7); g.stroke(); }
       else if (sel.type !== 'arrow' && sel.type !== 'line') g.strokeRect(sel.x1 * scale, sel.y1 * scale, (sel.x2 - sel.x1) * scale, (sel.y2 - sel.y1) * scale);
       g.setLineDash([]); g.fillStyle = '#fff';
       handlesOf(sel).forEach(h => { const s = 5 * dpr; g.fillRect(h.x * scale - s, h.y * scale - s, 2 * s, 2 * s); g.strokeRect(h.x * scale - s, h.y * scale - s, 2 * s, 2 * s); });
-      if (sel.type === 'num') {   // size badge next to the number
+      if (sel.type === 'num') {
         const t = Math.round(sel.r / NUM0() * 100) + '%';
         g.font = `600 ${12 * dpr}px ui-monospace, Menlo, monospace`;
-        const ph = 18 * dpr, pw = g.measureText(t).width + 12 * dpr, bx = (sel.x1 + sel.r) * scale + 12 * dpr, by = sel.y1 * scale - ph / 2;
+        const ph = 18 * dpr, pw = g.measureText(t).width + 12 * dpr, bx = (sel.x1 + sel.r + (sel.ow || 0)) * scale + 12 * dpr, by = sel.y1 * scale - ph / 2;
         g.fillStyle = acc; g.fillRect(bx, by, pw, ph);
         g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(t, bx + 6 * dpr, by + ph / 2 + dpr * .5);
       }
     }
   }
 
-  // ---------- Hit testing ----------
   const pos = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * W / r.width }; };
-  const px = () => W / cv.getBoundingClientRect().width;   // image px per CSS px
+  const px = () => W / cv.getBoundingClientRect().width;
   function segDist(p, ax, ay, bx, by) {
     const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy || 1;
     const t = Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.y - ay) * dy) / l));
@@ -341,27 +337,25 @@
   }
   function hits(a, p, full) {
     const tol = 10 * px();
-    if (a.type === 'num') return Math.hypot(p.x - a.x1, p.y - a.y1) <= a.r + tol / 2;
+    if (a.type === 'num') return Math.hypot(p.x - a.x1, p.y - a.y1) <= a.r + (a.ow || 0) + tol / 2;
     if (a.type === 'arrow' || a.type === 'line') return segDist(p, a.x1, a.y1, a.x2, a.y2) <= Math.max(tol, a.lw);
     const x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2), y1 = Math.min(a.y1, a.y2), y2 = Math.max(a.y1, a.y2);
     const outer = p.x >= x1 - tol && p.x <= x2 + tol && p.y >= y1 - tol && p.y <= y2 + tol;
-    if ((isB(a) || a.type === 'image') && (full || a === sel || (isB(a) && (tool === 'blur' || tool === 'gblur')))) return outer;   // whole area grabbable when selected / in blur tools
-    return outer && !(p.x > x1 + tol && p.x < x2 - tol && p.y > y1 + tol && p.y < y2 - tol);   // box: edges only
+    if ((isB(a) || a.type === 'image') && (full || a === sel || (isB(a) && (tool === 'blur' || tool === 'gblur')))) return outer;
+    return outer && !(p.x > x1 + tol && p.x < x2 - tol && p.y > y1 + tol && p.y < y2 - tol);
   }
   const hitItem = (p, full) => { for (let i = items.length - 1; i >= 0; i--) if (hits(items[i], p, full)) return items[i]; return null; };
   const hitHandle = p => { const o = tool === 'crop' ? crop : sel; if (!o) return null; const t = 9 * px(); return handlesOf(o).find(h => Math.abs(h.x - p.x) <= t && Math.abs(h.y - p.y) <= t) || null; };
   const CUR = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', start: 'pointer', end: 'pointer', r: 'nwse-resize' };
 
-  // ---------- History ----------
   function snap() { hist.push(JSON.stringify(items)); if (hist.length > 100) hist.shift(); }
   function undo() {
     if (!hist.length) return;
     const e = hist.pop(); crop = null; updateCropBar(); sel = null;
     if (typeof e === 'string') { items = JSON.parse(e); render(); return; }
-    base.width = e.W; base.height = e.H; base.getContext('2d').drawImage(e.bc, 0, 0);   // undo a crop
+    base.width = e.W; base.height = e.H; base.getContext('2d').drawImage(e.bc, 0, 0);
     W = e.W; H = e.H; items = JSON.parse(e.items); layout();
   }
-  // ---------- Crop ----------
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const inCrop = p => crop && p.x >= Math.min(crop.x1, crop.x2) && p.x <= Math.max(crop.x1, crop.x2) && p.y >= Math.min(crop.y1, crop.y2) && p.y <= Math.max(crop.y1, crop.y2);
   function updateCropBar() { $('#cropbar').style.display = crop && !mode ? 'flex' : 'none'; }
@@ -401,19 +395,17 @@
   function renumber() { let n = 0; items.forEach(a => { if (a.type === 'num') a.n = ++n; }); }
   function removeSel() { if (!sel) return; snap(); items = items.filter(a => a !== sel); sel = null; renumber(); render(); }
 
-  // ---------- Pointer ----------
   cv.addEventListener('pointerdown', e => {
     if (!hasImg) return; cv.setPointerCapture(e.pointerId);
     const p = pos(e), h = hitHandle(p);
     if (tool === 'crop') { cropDown(p, h); return; }
     if (h) { snap(); mode = { kind: 'handle', key: h.key, o: { ...sel } }; return; }
-    // clicking an existing shape always selects it (hold Alt to draw on top of one instead)
     const hit = e.altKey ? null : hitItem(p, tool === 'select');
     if (hit) { select(hit); snap(); mode = { kind: 'move', p, o: { ...hit } }; render(); return; }
     select(null);
     if (tool === 'select') { render(); return; }
     if (tool === 'num') {
-      snap(); const it = { type: 'num', x1: p.x, y1: p.y, n: items.filter(a => a.type === 'num').length + 1, r: lastNumR, color: colors.num };
+      snap(); const it = { type: 'num', x1: p.x, y1: p.y, n: items.filter(a => a.type === 'num').length + 1, r: lastNumR, color: colors.num, ow: outOn ? outPct / 100 * 3 * ub() : 0, oc: colors.numo };
       items.push(it); select(it); render(); return;
     }
     draft = { type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: colors[tool] || '#000000', lw: (lineDef[tool] || 100) / 100 * 3 * ub(), hd: head.value / 100 * 15 * ub() };
@@ -439,8 +431,8 @@
         const key = mode.key;
         if (key === 'start') { sel.x1 = p.x; sel.y1 = p.y; }
         else if (key === 'end') { sel.x2 = p.x; sel.y2 = p.y; }
-        else if (key === 'r') { sel.r = Math.max(6 * ub(), Math.hypot(p.x - sel.x1, p.y - sel.y1)); lastNumR = sel.r; numsz.value = sel.r / NUM0() * 100; showPct(); }  // next number reuses this size
-        else if (sel.type === 'image' && key.length === 2 && !e.shiftKey) {   // corners keep aspect ratio (hold Shift for free resize)
+        else if (key === 'r') { sel.r = Math.max(6 * ub(), Math.hypot(p.x - sel.x1, p.y - sel.y1)); lastNumR = sel.r; numsz.value = sel.r / NUM0() * 100; showPct(); }
+        else if (sel.type === 'image' && key.length === 2 && !e.shiftKey) {
           const ax = key.includes('w') ? o.x2 : o.x1, ay = key.includes('n') ? o.y2 : o.y1, asp = Math.abs(o.x2 - o.x1) / Math.abs(o.y2 - o.y1);
           let w = Math.abs(p.x - ax), h = Math.abs(p.y - ay); if (w / asp > h) h = w / asp; else w = h * asp;
           const nx = ax + (p.x < ax ? -w : w), ny = ay + (p.y < ay ? -h : h);
@@ -473,7 +465,6 @@
     if (hadSnap) render();
   });
 
-  // ---------- Output (exported at native resolution, 2x for small images) ----------
   const toBlob = () => new Promise(r => {
     const s = W < 1600 ? 2 : 1, ex = document.createElement('canvas');
     ex.width = W * s; ex.height = H * s;
@@ -495,7 +486,6 @@
   $('#clear').onclick = () => { if (!items.length) return; snap(); items = []; sel = null; render(); };
   $('#copy').onclick = copy; $('#save').onclick = save;
 
-  // arrow keys nudge the selected shape (or the crop box): 1 screen px, Shift = 10
   let nudgeSel = null, nudgeT = 0;
   function nudge(e) {
     const step = (e.shiftKey ? 10 : 1) * px(), key = e.key.toLowerCase();
@@ -505,7 +495,7 @@
       crop.x1 += dx; crop.x2 += dx; crop.y1 += dy; crop.y2 += dy; render(); return;
     }
     const now = Date.now();
-    if (nudgeSel !== sel || now - nudgeT > 800) snap();   // a burst of key presses is one undo step
+    if (nudgeSel !== sel || now - nudgeT > 800) snap();
     nudgeSel = sel; nudgeT = now;
     sel.x1 += dx; sel.y1 += dy;
     if (sel.type !== 'num') { sel.x2 += dx; sel.y2 += dy; }

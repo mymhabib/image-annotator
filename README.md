@@ -11,6 +11,7 @@ A lightweight, single-file screenshot annotator that runs entirely in your brows
 - **Crop**
 - Click any shape at any time to move it or resize it with handles
 - Adjustable thickness, arrow head size and number size (slider, typed %, reset)
+- Optional outline on numbered callouts, with its own color and thickness
 - Optional **edge snapping**: while you draw or resize a box or blur area, its edges snap to line up with the matching edges (top, bottom, left, right) of other shapes of the same type, with a dashed guide line (toggle with the magnet button or `M`)
 - Paste another image onto your screenshot (movable, resizable layer), and copy/paste shapes
 - Sharp on Retina displays, exported at the image's full resolution
