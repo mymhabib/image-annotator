@@ -96,20 +96,59 @@
   function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 1600); }
 
   // ---------- Loading images ----------
+  // pasted images live in a registry (items only store an id, so undo snapshots stay small)
+  const imgReg = new Map(); let imgSeq = 0, blurSrc = base, blurSig = '', compC = null;
+  let shapeClip = null;
+  const MARKER = '[shape copied in Image Annotator]';
   function loadBlob(blob) {
     const url = URL.createObjectURL(blob), img = new Image();
     img.onload = () => {
       W = base.width = img.naturalWidth; H = base.height = img.naturalHeight;
       base.getContext('2d').drawImage(img, 0, 0);
-      items = []; sel = draft = mode = crop = null; hist = []; hasImg = true; updateCropBar(); lastNumR = NUM0(); numsz.value = 100; showPct();
+      items = []; imgReg.clear(); sel = draft = mode = crop = null; hist = []; hasImg = true; updateCropBar(); lastNumR = NUM0(); numsz.value = 100; showPct();
       cv.style.display = 'block'; $('#empty').style.display = 'none';
       layout(); URL.revokeObjectURL(url);
     };
     img.src = url;
   }
+  // Paste: first image becomes the canvas. After that an image is added as a movable layer and a copied shape is pasted.
+  // Cmd/Ctrl+Shift+V replaces the whole canvas with the clipboard image instead.
+  let pasteReplace = false;
   document.addEventListener('paste', e => {
-    for (const it of e.clipboardData.items) if (it.type.startsWith('image/')) { loadBlob(it.getAsFile()); e.preventDefault(); return; }
+    if (e.target.tagName === 'INPUT') return;
+    const cd = e.clipboardData;
+    for (const it of cd.items) if (it.type.startsWith('image/')) {
+      e.preventDefault(); const f = it.getAsFile();
+      if (!hasImg || pasteReplace) loadBlob(f); else addImageLayer(f);
+      pasteReplace = false; return;
+    }
+    const txt = cd.getData('text/plain');
+    if (hasImg && shapeClip && (!txt || txt === MARKER)) { e.preventDefault(); pasteShape(); }
+    pasteReplace = false;
   });
+  function addImageLayer(blob) {
+    const url = URL.createObjectURL(blob), img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0); URL.revokeObjectURL(url);
+      const id = ++imgSeq; imgReg.set(id, c);
+      const s = Math.min(1, W * .8 / c.width, H * .8 / c.height), w = c.width * s, h = c.height * s;
+      const it = { type: 'image', id, x1: (W - w) / 2, y1: (H - h) / 2, x2: (W + w) / 2, y2: (H + h) / 2 };
+      snap(); items.push(it); select(it); render(); toast('Image pasted — drag to move, corners to resize');
+    };
+    img.src = url;
+  }
+  function copyShape() {
+    shapeClip = { json: JSON.stringify(sel), n: 0 };
+    try { navigator.clipboard.writeText(MARKER).catch(() => {}); } catch (err) {}   // replaces any older image on the system clipboard
+    toast('Shape copied — ⌘V to paste');
+  }
+  function pasteShape() {
+    const it = JSON.parse(shapeClip.json), off = 16 * px() * ++shapeClip.n;
+    if (it.type === 'image' && !imgReg.has(it.id)) return;   // its image belonged to a previous canvas
+    it.x1 += off; it.y1 += off; if (it.x2 != null) { it.x2 += off; it.y2 += off; }
+    snap(); items.push(it); renumber(); select(it); render();
+  }
   const stage = $('#stage');
   stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('drag'); });
   stage.addEventListener('dragleave', () => stage.classList.remove('drag'));
@@ -133,19 +172,31 @@
   if (window.ResizeObserver) new ResizeObserver(layout).observe(stage);   // toolbar height can change
 
   // ---------- Drawing ----------
-    const isB = a => a.type === 'blur' || a.type === 'gblur';
+    function drawImg(g, a) {
+    const im = imgReg.get(a.id); if (!im) return;
+    g.save(); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(im, Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), Math.abs(a.x2 - a.x1), Math.abs(a.y2 - a.y1)); g.restore();
+  }
+  function blurSource() {   // screenshot + pasted images, so blurs also cover pasted images
+    const imgs = items.filter(a => a.type === 'image');
+    if (!imgs.length || !items.some(a => a.type === 'blur' || a.type === 'gblur')) { blurSig = ''; return base; }
+    compC = compC || document.createElement('canvas'); compC.width = W; compC.height = H;
+    const c = compC.getContext('2d'); c.drawImage(base, 0, 0); imgs.forEach(a => drawImg(c, a));
+    blurSig = imgs.map(a => [a.id, a.x1, a.y1, a.x2, a.y2].join()).join('|'); return compC;
+  }
+  const isB = a => a.type === 'blur' || a.type === 'gblur';
   const gbCache = new WeakMap();
   const canFilter = (() => { const t = document.createElement('canvas').getContext('2d'); t.filter = 'blur(2px)'; return t.filter === 'blur(2px)'; })();
   function smoothBlur(a, x, y, w, h) {
-    const sigma = Math.max(8 * Math.max(1, W / 1000), Math.min(w, h) / 6), key = [x, y, w, h, W].join();
+    const sigma = Math.max(8 * Math.max(1, W / 1000), Math.min(w, h) / 6), key = [x, y, w, h, W, blurSig].join();
     const c = gbCache.get(a); if (c && c.key === key) return c;
     const pad = Math.ceil(sigma * 3), sx = Math.max(0, Math.floor(x - pad)), sy = Math.max(0, Math.floor(y - pad));
     const sw = Math.min(W, Math.ceil(x + w + pad)) - sx, sh = Math.min(H, Math.ceil(y + h + pad)) - sy;
     const off = document.createElement('canvas'); off.width = sw; off.height = sh;
     const og = off.getContext('2d'); og.imageSmoothingQuality = 'high';
-    if (canFilter) { og.filter = `blur(${sigma}px)`; og.drawImage(base, sx, sy, sw, sh, 0, 0, sw, sh); }
+    if (canFilter) { og.filter = `blur(${sigma}px)`; og.drawImage(blurSrc, sx, sy, sw, sh, 0, 0, sw, sh); }
     else {   // Safari fallback: repeated halving then smooth upscale
-      let cur = document.createElement('canvas'); cur.width = sw; cur.height = sh; cur.getContext('2d').drawImage(base, sx, sy, sw, sh, 0, 0, sw, sh);
+      let cur = document.createElement('canvas'); cur.width = sw; cur.height = sh; cur.getContext('2d').drawImage(blurSrc, sx, sy, sw, sh, 0, 0, sw, sh);
       const f = Math.max(2, Math.round(sigma / 1.5)); let cw = sw, ch = sh;
       while (cw > sw / f + 1 && cw > 4 && ch > 4) { const n = document.createElement('canvas'); n.width = Math.max(2, Math.ceil(cw / 2)); n.height = Math.max(2, Math.ceil(ch / 2)); const ng = n.getContext('2d'); ng.imageSmoothingQuality = 'high'; ng.drawImage(cur, 0, 0, n.width, n.height); cur = n; cw = n.width; ch = n.height; }
       og.drawImage(cur, 0, 0, cw, ch, 0, 0, sw, sh);
@@ -176,7 +227,7 @@
       if (w < 2 || h < 2) { g.restore(); return; }
       const b = Math.max(8, Math.round(Math.min(w, h) / 6), Math.round(W / 120));
       const t = document.createElement('canvas'); t.width = Math.ceil(w / b); t.height = Math.ceil(h / b);
-      t.getContext('2d').drawImage(base, x, y, w, h, 0, 0, t.width, t.height);
+      t.getContext('2d').drawImage(blurSrc, x, y, w, h, 0, 0, t.width, t.height);
       g.imageSmoothingEnabled = false; g.drawImage(t, 0, 0, t.width, t.height, x, y, t.width * b, t.height * b);
     }
     else if (a.type === 'gblur') {
@@ -200,8 +251,10 @@
     g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
     g.setTransform(scale, 0, 0, scale, 0, 0);
     g.drawImage(base, 0, 0);
-    items.filter(isB).forEach(a => drawItem(g, a));   // blurs sit under everything else
-    items.filter(a => !isB(a)).forEach(a => drawItem(g, a));
+    items.filter(a => a.type === 'image').forEach(a => drawImg(g, a));   // pasted images sit on the screenshot
+    blurSrc = blurSource();
+    items.filter(isB).forEach(a => drawItem(g, a));   // blurs sit under annotations (and blur pasted images too)
+    items.filter(a => !isB(a) && a.type !== 'image').forEach(a => drawItem(g, a));
     if (draft) drawItem(g, draft);
     if (ui && crop) {
       g.setTransform(1, 0, 0, 1, 0, 0);
@@ -249,7 +302,7 @@
     if (a.type === 'arrow' || a.type === 'line') return segDist(p, a.x1, a.y1, a.x2, a.y2) <= Math.max(tol, a.lw);
     const x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2), y1 = Math.min(a.y1, a.y2), y2 = Math.max(a.y1, a.y2);
     const outer = p.x >= x1 - tol && p.x <= x2 + tol && p.y >= y1 - tol && p.y <= y2 + tol;
-    if (isB(a) && (full || a === sel || tool === 'blur' || tool === 'gblur')) return outer;   // whole area grabbable when selected / in blur tools
+    if ((isB(a) || a.type === 'image') && (full || a === sel || (isB(a) && (tool === 'blur' || tool === 'gblur')))) return outer;   // whole area grabbable when selected / in blur tools
     return outer && !(p.x > x1 + tol && p.x < x2 - tol && p.y > y1 + tol && p.y < y2 - tol);   // box: edges only
   }
   const hitItem = (p, full) => { for (let i = items.length - 1; i >= 0; i--) if (hits(items[i], p, full)) return items[i]; return null; };
@@ -343,6 +396,13 @@
         if (key === 'start') { sel.x1 = p.x; sel.y1 = p.y; }
         else if (key === 'end') { sel.x2 = p.x; sel.y2 = p.y; }
         else if (key === 'r') { sel.r = Math.max(6 * ub(), Math.hypot(p.x - sel.x1, p.y - sel.y1)); lastNumR = sel.r; numsz.value = sel.r / NUM0() * 100; showPct(); }  // next number reuses this size
+        else if (sel.type === 'image' && key.length === 2 && !e.shiftKey) {   // corners keep aspect ratio (hold Shift for free resize)
+          const ax = key.includes('w') ? o.x2 : o.x1, ay = key.includes('n') ? o.y2 : o.y1, asp = Math.abs(o.x2 - o.x1) / Math.abs(o.y2 - o.y1);
+          let w = Math.abs(p.x - ax), h = Math.abs(p.y - ay); if (w / asp > h) h = w / asp; else w = h * asp;
+          const nx = ax + (p.x < ax ? -w : w), ny = ay + (p.y < ay ? -h : h);
+          if (key.includes('w')) sel.x1 = nx; else sel.x2 = nx;
+          if (key.includes('n')) sel.y1 = ny; else sel.y2 = ny;
+        }
         else {
           if (key.includes('w')) sel.x1 = p.x; if (key.includes('e')) sel.x2 = p.x;
           if (key.includes('n')) sel.y1 = p.y; if (key.includes('s')) sel.y2 = p.y;
@@ -407,10 +467,11 @@
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase(), T = { v: 'select', a: 'arrow', l: 'line', r: 'rect', b: 'blur', g: 'gblur', n: 'num', c: 'crop' };
+    if (mod && key === 'v') pasteReplace = e.shiftKey;
     if (hasImg && key.startsWith('arrow') && ((tool === 'crop' && crop) || sel)) { e.preventDefault(); nudge(e); return; }
     if (key === 'enter' && crop) { e.preventDefault(); applyCrop(); }
     else if (mod && key === 'z') { e.preventDefault(); undo(); }
-    else if (mod && key === 'c') { e.preventDefault(); copy(); }
+    else if (mod && key === 'c') { e.preventDefault(); if (sel) copyShape(); else copy(); }
     else if (mod && key === 's') { e.preventDefault(); save(); }
     else if (key === 'delete' || key === 'backspace') { e.preventDefault(); removeSel(); }
     else if (key === 'escape') { closePop(); if (crop) { crop = null; updateCropBar(); } sel = null; render(); }
