@@ -248,7 +248,7 @@
     if (a.type === 'arrow' || a.type === 'line') return segDist(p, a.x1, a.y1, a.x2, a.y2) <= Math.max(tol, a.lw);
     const x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2), y1 = Math.min(a.y1, a.y2), y2 = Math.max(a.y1, a.y2);
     const outer = p.x >= x1 - tol && p.x <= x2 + tol && p.y >= y1 - tol && p.y <= y2 + tol;
-    if (isB(a) && full) return outer;
+    if (isB(a) && (full || a === sel || tool === 'blur' || tool === 'gblur')) return outer;   // whole area grabbable when selected / in blur tools
     return outer && !(p.x > x1 + tol && p.x < x2 - tol && p.y > y1 + tol && p.y < y2 - tol);   // box: edges only
   }
   const hitItem = (p, full) => { for (let i = items.length - 1; i >= 0; i--) if (hits(items[i], p, full)) return items[i]; return null; };
