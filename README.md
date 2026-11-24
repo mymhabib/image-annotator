@@ -11,6 +11,7 @@ A lightweight, single-file screenshot annotator that runs entirely in your brows
 - **Crop**
 - Click any shape at any time to move it or resize it with handles
 - Adjustable thickness, arrow head size and number size (slider, typed %, reset)
+- Optional **edge snapping**: while you draw or resize a box or blur area, its edges snap to line up with the matching edges (top, bottom, left, right) of other shapes of the same type, with a dashed guide line (toggle with the magnet button or `M`)
 - Paste another image onto your screenshot (movable, resizable layer), and copy/paste shapes
 - Sharp on Retina displays, exported at the image's full resolution
 - Undo (up to 100 steps, including crops)
@@ -30,6 +31,7 @@ Open it in as many tabs as you like. Each tab keeps its own image and history.
 
 | Key | Action |
 | --- | --- |
+| `M` | Toggle edge snapping |
 | `V` | Select tool |
 | `A` | Arrow |
 | `L` | Line |
@@ -47,6 +49,7 @@ Open it in as many tabs as you like. Each tab keeps its own image and history.
 | Arrow keys | Nudge the selected shape (`Shift` = 10x) |
 | `Esc` | Deselect |
 | `Shift` (while drawing an arrow or line) | Snap to 45° steps |
+| `⌘` / `Ctrl` (while dragging a box or blur) | Temporarily bypass edge snapping |
 | `Alt` / `Option` (while dragging) | Draw a new shape on top of an existing one |
 
 ## Notes

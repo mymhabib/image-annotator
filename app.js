@@ -96,6 +96,37 @@
   function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 1600); }
 
   // ---------- Loading images ----------
+  // edge snapping: boxes / blurs magnetise their moving edge to the matching edge of other shapes of the same type
+  let snapOn = true, snapRef = null;
+  try { snapOn = localStorage.getItem('ia-snap') !== '0'; } catch (err) {}
+  const snapBtn = $('#snap'), paintSnap = () => snapBtn.classList.toggle('on', snapOn);
+  function toggleSnap() {
+    snapOn = !snapOn; try { localStorage.setItem('ia-snap', snapOn ? '1' : '0'); } catch (err) {}
+    paintSnap(); toast('Edge snapping ' + (snapOn ? 'on' : 'off'));
+  }
+  snapBtn.onclick = toggleSnap; paintSnap();
+  const RL = t => t === 'rect' || t === 'blur' || t === 'gblur';
+  // mx / my = the edge being moved (x1|x2, y1|y2), or null if that axis isn't changing.
+  // The moving edge snaps to the same side (left/right/top/bottom) of the nearest-aligned shape of the same type.
+  function snapDims(it, mx, my, e) {
+    snapRef = null;
+    if (!snapOn || (e && (e.metaKey || e.ctrlKey))) return;   // hold Cmd/Ctrl to bypass
+    const bb = o => ({ l: Math.min(o.x1, o.x2), r: Math.max(o.x1, o.x2), t: Math.min(o.y1, o.y2), b: Math.max(o.y1, o.y2) });
+    const others = items.filter(o => o !== it && o.type === it.type).map(bb);
+    if (!others.length) return;
+    const tol = 8 * px(), guides = [];
+    const pick = (key, side) => {   // closest same-side edge within tolerance
+      let best = null, bd = tol + 1;
+      for (const b of others) { const v = b[side], d = Math.abs(v - it[key]); if (d < bd) { bd = d; best = { v, b }; } }
+      return best;
+    };
+    if (mx) { const hit = pick(mx, (mx === 'x1' ? it.x1 <= it.x2 : it.x2 < it.x1) ? 'l' : 'r'); if (hit) { it[mx] = hit.v; guides.push({ axis: 'x', pos: hit.v, b: hit.b }); } }
+    if (my) { const hit = pick(my, (my === 'y1' ? it.y1 <= it.y2 : it.y2 < it.y1) ? 't' : 'b'); if (hit) { it[my] = hit.v; guides.push({ axis: 'y', pos: hit.v, b: hit.b }); } }
+    if (!guides.length) return;
+    const a = bb(it);   // guide line spans both shapes
+    guides.forEach(g => { if (g.axis === 'x') { g.from = Math.min(a.t, g.b.t); g.to = Math.max(a.b, g.b.b); } else { g.from = Math.min(a.l, g.b.l); g.to = Math.max(a.r, g.b.r); } });
+    snapRef = guides;
+  }
   // pasted images live in a registry (items only store an id, so undo snapshots stay small)
   const imgReg = new Map(); let imgSeq = 0, blurSrc = base, blurSig = '', compC = null;
   let shapeClip = null;
@@ -270,6 +301,18 @@
       g.fillStyle = '#2563eb'; g.fillRect(bx, by, pw, ph);
       g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(t, bx + 6 * dpr, by + ph / 2 + dpr * .5);
     }
+    if (ui && snapRef) {   // magenta alignment guides
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      const dpr = window.devicePixelRatio || 1, pad = 6 * dpr;
+      g.strokeStyle = '#d946ef'; g.lineWidth = 1.5 * dpr; g.setLineDash([6 * dpr, 4 * dpr]);
+      snapRef.forEach(s => {
+        g.beginPath();
+        if (s.axis === 'x') { g.moveTo(s.pos * scale, s.from * scale - pad); g.lineTo(s.pos * scale, s.to * scale + pad); }
+        else { g.moveTo(s.from * scale - pad, s.pos * scale); g.lineTo(s.to * scale + pad, s.pos * scale); }
+        g.stroke();
+      });
+      g.setLineDash([]);
+    }
     if (ui && sel && !draft) {
       g.setTransform(1, 0, 0, 1, 0, 0);
       const dpr = window.devicePixelRatio || 1, acc = '#2563eb';
@@ -384,6 +427,7 @@
         const dx = p.x - draft.x1, dy = p.y - draft.y1, len = Math.hypot(dx, dy), a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
         draft.x2 = draft.x1 + Math.cos(a) * len; draft.y2 = draft.y1 + Math.sin(a) * len;
       }
+      if (RL(draft.type)) snapDims(draft, 'x2', 'y2', e); else snapRef = null;
       render();
     } else if (mode) {
       const o = mode.o;
@@ -406,6 +450,7 @@
         else {
           if (key.includes('w')) sel.x1 = p.x; if (key.includes('e')) sel.x2 = p.x;
           if (key.includes('n')) sel.y1 = p.y; if (key.includes('s')) sel.y2 = p.y;
+          if (RL(sel.type)) snapDims(sel, key.includes('w') ? 'x1' : key.includes('e') ? 'x2' : null, key.includes('n') ? 'y1' : key.includes('s') ? 'y2' : null, e);
         }
       }
       render();
@@ -415,6 +460,7 @@
     }
   });
   cv.addEventListener('pointerup', () => {
+    const hadSnap = !!snapRef; snapRef = null;
     if (mode && mode.kind.startsWith('crop')) {
       if (mode.kind === 'crop-new' && Math.max(Math.abs(crop.x2 - crop.x1), Math.abs(crop.y2 - crop.y1)) < 6 * px()) crop = null;
       mode = null; updateCropBar(); render(); return;
@@ -424,6 +470,7 @@
       draft = null; render();
     }
     if (mode) { if (hist.length && hist[hist.length - 1] === JSON.stringify(items)) hist.pop(); mode = null; }
+    if (hadSnap) render();
   });
 
   // ---------- Output (exported at native resolution, 2x for small images) ----------
@@ -475,6 +522,7 @@
     else if (mod && key === 's') { e.preventDefault(); save(); }
     else if (key === 'delete' || key === 'backspace') { e.preventDefault(); removeSel(); }
     else if (key === 'escape') { closePop(); if (crop) { crop = null; updateCropBar(); } sel = null; render(); }
+    else if (!mod && key === 'm') toggleSnap();
     else if (!mod && T[key]) setTool(T[key]);
   });
   setTool('arrow');
