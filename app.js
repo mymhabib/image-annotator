@@ -64,6 +64,7 @@
     const r = R[id], n = N[id];
     r.addEventListener('pointerdown', () => { if (rel[id]()) snap(); });
     r.addEventListener('input', () => { showPct(); apply[id](); redraw(); });
+    r.addEventListener('change', () => r.blur());   // give keys back to the canvas (arrow-key nudging)
     n.addEventListener('focus', () => { n._snapped = false; });
     n.addEventListener('input', () => {
       const v = parseFloat(n.value); if (isNaN(v)) return;
@@ -387,9 +388,26 @@
   $('#clear').onclick = () => { if (!items.length) return; snap(); items = []; sel = null; render(); };
   $('#copy').onclick = copy; $('#save').onclick = save;
 
+  // arrow keys nudge the selected shape (or the crop box): 1 screen px, Shift = 10
+  let nudgeSel = null, nudgeT = 0;
+  function nudge(e) {
+    const step = (e.shiftKey ? 10 : 1) * px(), key = e.key.toLowerCase();
+    let dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0, dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
+    if (tool === 'crop' && crop) {
+      dx = clamp(dx, -Math.min(crop.x1, crop.x2), W - Math.max(crop.x1, crop.x2)); dy = clamp(dy, -Math.min(crop.y1, crop.y2), H - Math.max(crop.y1, crop.y2));
+      crop.x1 += dx; crop.x2 += dx; crop.y1 += dy; crop.y2 += dy; render(); return;
+    }
+    const now = Date.now();
+    if (nudgeSel !== sel || now - nudgeT > 800) snap();   // a burst of key presses is one undo step
+    nudgeSel = sel; nudgeT = now;
+    sel.x1 += dx; sel.y1 += dy;
+    if (sel.type !== 'num') { sel.x2 += dx; sel.y2 += dy; }
+    render();
+  }
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase(), T = { v: 'select', a: 'arrow', l: 'line', r: 'rect', b: 'blur', g: 'gblur', n: 'num', c: 'crop' };
+    if (hasImg && key.startsWith('arrow') && ((tool === 'crop' && crop) || sel)) { e.preventDefault(); nudge(e); return; }
     if (key === 'enter' && crop) { e.preventDefault(); applyCrop(); }
     else if (mod && key === 'z') { e.preventDefault(); undo(); }
     else if (mod && key === 'c') { e.preventDefault(); copy(); }
